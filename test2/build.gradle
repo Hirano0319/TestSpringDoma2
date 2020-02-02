@@ -1,0 +1,142 @@
+plugins {
+	id 'org.springframework.boot' version '2.2.4.RELEASE'
+	id 'io.spring.dependency-management' version '1.0.9.RELEASE'
+	id 'java'
+    id 'maven-publish'
+    id 'eclipse'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = '1.8'
+
+// for Doma 2
+// JavaクラスとSQLファイルの出力先ディレクトリを同じにする
+processResources.destinationDir = compileJava.destinationDir
+// コンパイルより前にSQLファイルを出力先ディレクトリにコピーするために依存関係を逆転する
+compileJava.dependsOn processResources
+
+configurations { // Doma-Gen-2 のタスクを登録（build.gradleファイル内で使えるようにかと）
+    domaGenRuntime
+}
+repositories {
+	mavenCentral()
+
+//	maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
+    maven {
+        url "http://repo.maven.apache.org/maven2"
+    }
+    maven { // Doma-Gen-2 の依存関係の取得先リポジトリ
+        url "https://oss.sonatype.org/content/repositories/snapshots/"
+    }
+}
+
+dependencies {
+
+/*
+	compile('org.seasar.doma.boot:doma-spring-boot-starter:1.0.2')
+	compile('mysql:mysql-connector-java:5.1.38')
+
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	testImplementation('org.springframework.boot:spring-boot-starter-test') {
+		exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+	}
+*/
+    def springBootVersion = "2.2.4.RELEASE"
+    def mysqlVersion = "8.0.19"
+    implementation (
+        "org.springframework.boot:spring-boot-starter-data-jdbc:${springBootVersion}",
+        "org.springframework.boot:spring-boot-starter-web:${springBootVersion}",
+    )
+    testImplementation "org.springframework.boot:spring-boot-starter-test:${springBootVersion}"
+    implementation "mysql:mysql-connector-java:${mysqlVersion}"
+
+    // Generating Your Own Metadata by Using the Annotation Processor
+    // ⇩Doma2で、「Doma uses Pluggable Annotation Processing API at compile time.」ってあるので、不要かな？
+    // annotationProcessor "org.springframework.boot:spring-boot-configuration-processor:${springBootVersion}"
+
+    // Doma2 に必要な依存関係を追加
+    def domaVersion = "2.25.1"
+    def domaSpringVersion = "1.2.1"
+    annotationProcessor "org.seasar.doma:doma:${domaVersion}"
+    implementation "org.seasar.doma:doma:${domaVersion}"
+    // Doma2 をSpring Bootで使う際の依存関係を追加
+    implementation "org.seasar.doma.boot:doma-spring-boot-starter:${domaSpringVersion}"
+    // Doma-Gen-2 に必要な依存関係を追加
+    domaGenRuntime "org.seasar.doma:doma-gen:${domaVersion}"
+    domaGenRuntime "mysql:mysql-connector-java:${mysqlVersion}"
+
+
+}
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from(components.java)
+        }
+    }
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+tasks.eclipse.doFirst {
+    File prefs = file(".settings/org.eclipse.buildship.core.prefs")
+    if(!prefs.exists()){
+        prefs.append('''
+            connection.project.dir=
+            eclipse.preferences.version=1
+            '''.stripIndent())
+    }
+}
+
+apply from: 'gradle/datasource.gradle'
+
+// JavaクラスとSQLファイルの出力先ディレクトリを同じにする
+processResources.destinationDir = compileJava.destinationDir
+// Doma-Genでコンパイルより前にSQLファイルを出力先ディレクトリにコピーするために依存関係を逆転する
+compileJava.dependsOn processResources
+
+task gen { // doma-genって定義したRuntimeタスクに、genって実タスクを作成
+    group = 'doma-gen'
+    doLast {
+        // ↓パッケージは各々の環境に合わせてください
+        def resourceDir = 'src/main/resources'
+        // ↓パッケージは各々の環境に合わせてください
+        def destBaseDir = 'src/main/java/com/example/demo'
+        def basePackage = 'com.example.demo.domain'
+
+        ant.taskdef(resource: 'domagentask.properties',
+            classpath: configurations.domaGenRuntime.asPath)
+/*
+         // Doma-Gen のタスク前に、テーブルが無かったら作成
+         // ↓ Gradleの公式ドキュメントで、ant.sql の情報が無い...もはや過去の遺産？
+        ant.sql(classpath: configurations.domaGenRuntime.asPath,
+            driver: "${datasource.driver}",
+            url: "${datasource.url}",
+            userid: "${datasource.user}",
+            password: "${datasource.password}") {
+                fileset(dir: "${resourceDir}") {
+                  include(name: "schema.sql")
+                  //include(name: "data.sql") // ←ファイルの実行順とか制御できないっぽい...
+                }
+            }
+        ant.sql(classpath: configurations.domaGenRuntime.asPath,
+            driver: "${datasource.driver}",
+            url: "${datasource.url}",
+            userid: "${datasource.user}",
+            password: "${datasource.password}") {
+                fileset(dir: "${resourceDir}") {
+                  //include(name: "schema.sql")
+                  include(name: "data.sql")
+                }
+            }
+*/
+       ant.gen(url: "${datasource.url}", user: "${datasource.user}", password: "${datasource.password}", templatePrimaryDir: "${resourceDir}/config/doma/templates", tableNamePattern: 'test_user') {
+            entityConfig(packageName: "${basePackage}.entity", useAccessor: false, useListener: false)
+            daoConfig(packageName: "${basePackage}.dao", overwrite: true)
+            sqlConfig()
+        }
+    }
+}
+

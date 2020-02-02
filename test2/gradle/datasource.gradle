@@ -1,0 +1,19 @@
+import org.yaml.snakeyaml.*
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+    }
+}
+
+task datasource {
+
+    //↓groovyの 「展開ドット演算子」ってので、入れ子になった変数にアクセスできるらしい
+    ext.url = "jdbc:mysql://localhost:3306/test?serverTimezone=JST"
+    ext.user = "root"
+    ext.password = "bell1234!"
+    // ↓Springが、yamlのプロパティのkebab-caseなフォーマットにしたせいで、snakeYamlが対応してないので、値を直に設定
+    ext.driver = "com.mysql.cj.jdbc.Driver" // ←application.ymlの「spring.datasource.driver-class-name」プロパティの値を設定
+}
